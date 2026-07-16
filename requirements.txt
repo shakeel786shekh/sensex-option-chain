@@ -1,0 +1,8 @@
+pandas
+numpy
+scipy
+selenium
+webdriver-manager
+gspread
+oauth2client
+requests

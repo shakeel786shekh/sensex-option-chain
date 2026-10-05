@@ -47,6 +47,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
+from sensex_analysis import ANALYSIS_HEADERS, add_oi_analysis
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CONFIGURATION
@@ -433,7 +434,7 @@ def fetch_live_data():
 # ─────────────────────────────────────────────────────────────────────────────
 # PROCESS + PUSH TO GOOGLE SHEETS
 # ─────────────────────────────────────────────────────────────────────────────
-HEADERS = [
+BASE_HEADERS = [
     'Call OI',    'Call Chng OI', 'Call Vol',     'Call IV',     'Call Delta',
     'Call LTP',   'Call Chng',    'Call Bid Qty', 'Call Bid',    'Call Ask', 'Call Ask Qty',
     'Strike Price',
@@ -441,6 +442,7 @@ HEADERS = [
     'Put Chng',   'Put LTP',      'Put IV',       'Put Delta',
     'Put Vol',    'Put Chng OI',  'Put OI',       'PCR (Strike)'
 ]
+HEADERS = BASE_HEADERS + ANALYSIS_HEADERS
 
 
 def update_dashboard():
@@ -505,9 +507,8 @@ def update_dashboard():
         except Exception as e:
             print(f"  [Row skip] {e}", flush=True)
 
-    final_df = pd.DataFrame(clean_rows, columns=HEADERS)
-    final_df.sort_values('Strike Price', inplace=True)
-    final_df.reset_index(drop=True, inplace=True)
+    final_df = pd.DataFrame(clean_rows, columns=BASE_HEADERS)
+    final_df = add_oi_analysis(final_df)
 
     if final_df.empty:
         print("[Warning] All strikes filtered out (market may be closed).", flush=True)
@@ -519,9 +520,33 @@ def update_dashboard():
     overall_pcr = round(total_p_oi / total_c_oi, 2) if total_c_oi > 0 else 0.0
     resistance  = final_df.loc[final_df['Call OI'].idxmax(), 'Strike Price']
     support     = final_df.loc[final_df['Put OI'].idxmax(),  'Strike Price']
+    if spot_price > 0:
+        atm_index = (final_df['Strike Price'] - spot_price).abs().idxmin()
+        atm_row = final_df.loc[atm_index]
+        oi_bias = (
+            'Bullish' if atm_row['Difference'] < 0 else
+            'Bearish' if atm_row['Difference'] > 0 else
+            'Sideways'
+        )
+        atm_signals = {
+            'Call Exits': atm_row['Call Exits'],
+            'Put Exits': atm_row['Put Exits'],
+            'Call ITM': atm_row['Call ITM'],
+            'Put ITM': atm_row['Put ITM'],
+        }
+    else:
+        oi_bias = 'Unavailable'
+        atm_signals = {key: 'Unavailable' for key in (
+            'Call Exits', 'Put Exits', 'Call ITM', 'Put ITM'
+        )}
 
     print(f"> Call OI: {int(total_c_oi):,}  Put OI: {int(total_p_oi):,}  PCR: {overall_pcr}", flush=True)
     print(f"> Resistance (Max Call OI): {resistance}  |  Support (Max Put OI): {support}", flush=True)
+    print(
+        f"> Near-ATM OI bias: {oi_bias} | Call exits: {atm_signals['Call Exits']} "
+        f"| Put exits: {atm_signals['Put Exits']}",
+        flush=True
+    )
 
     # Push to Google Sheet
     try:
@@ -535,6 +560,11 @@ def update_dashboard():
             f"Support: {support}",
             f"Resistance: {resistance}",
             f"TTE: {tte_days} days",
+            f"Near-ATM OI Bias: {oi_bias}",
+            f"Call Exits: {atm_signals['Call Exits']}",
+            f"Put Exits: {atm_signals['Put Exits']}",
+            f"Call ITM: {atm_signals['Call ITM']}",
+            f"Put ITM: {atm_signals['Put ITM']}",
             f"ASON: {ason_time}",
             f"Updated: {datetime.datetime.now().strftime('%d-%b-%Y %H:%M:%S')}",
         ])

@@ -15,7 +15,7 @@
 This tool automates the process of:
 1. **Loading** BSE India's SENSEX derivatives page using a stealth headless Chrome browser
 2. **Capturing** the internal option chain API response using Chrome DevTools Protocol (CDP)
-3. **Computing** Delta (Black-Scholes), Put-Call Ratio (PCR), Support & Resistance levels for every strike price
+3. **Computing** Delta (Black-Scholes), Put-Call Ratio (PCR), Support & Resistance, and open-interest trend signals for every strike price
 4. **Pushing** the processed data into a live Google Sheet every 60 seconds
 
 ---
@@ -73,16 +73,20 @@ This tool automates the process of:
 
 ## 📊 Output: Google Sheet Column Layout
 
-The script writes **24 columns** per row (one row = one strike price):
+The script writes **33 columns** per row (one row = one strike price), including the nine added open-interest analytics:
 
 ```
 Call OI | Call ΔOI | Call Vol | Call IV | Call Δ | Call LTP | Call Chng | 
 Call BidQ | Call Bid | Call Ask | Call AskQ | STRIKE PRICE |
 Put BidQ | Put Bid | Put Ask | Put AskQ | Put Chng | Put LTP | 
-Put IV | Put Δ | Put Vol | Put ΔOI | Put OI | PCR
+Put IV | Put Δ | Put Vol | Put ΔOI | Put OI | PCR |
+Call Sum | Put Sum | Difference | Call Boundary | Put Boundary |
+Call Exits | Put Exits | Call ITM | Put ITM
 ```
 
-**Row 1** contains summary metadata (Spot, PCR, Support, Resistance, Expiry, ASON timestamp).
+The sums aggregate change in open interest across three nearby strikes: the current and next two higher strikes for calls, and the current and next two lower strikes for puts. `Difference` is Call Sum minus Put Sum; a negative value is labeled bullish and a positive value bearish in the near-ATM summary. `Call Exits`/`Put Exits` are set when the corresponding sum or boundary is negative. ITM flags use the analyzer's described far-OTM exit/writing ratio heuristic (greater than 1.5), looking four higher strikes for calls and two lower strikes for puts. Missing offset strikes do not produce an ITM flag.
+
+**Row 1** contains summary metadata (Spot, PCR, Support, Resistance, near-ATM OI signals, Expiry, and ASON timestamp).
 
 ---
 
@@ -141,6 +145,9 @@ python test_sheets.py
 
 # Test BSE network capture (CDP interception diagnostic)
 python test_sensex_api.py
+
+# Unit tests for open-interest analytics (no network access required)
+python -m unittest test_sensex_analysis.py
 ```
 
 ---
@@ -209,7 +216,7 @@ All market data is sourced directly from **[BSE India](https://www.bseindia.com/
 ## 🛡️ Disclaimer
 
 This project is for **educational and portfolio demonstration purposes only**.  
-Option trading involves substantial financial risk. The calculations provided (including Black-Scholes Greeks) are mathematical estimates and **should not be used as financial advice**.
+Option trading involves substantial financial risk. The calculations provided (including Black-Scholes Greeks and open-interest trend signals) are heuristic estimates and **should not be used as financial advice**.
 
 ---
 
